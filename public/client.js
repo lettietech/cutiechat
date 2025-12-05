@@ -34,6 +34,7 @@ const iceServers = {
 
 /**
  * Gets the user's local media stream (camera and microphone).
+ * ⭐️ FEATURE: Used to start local video immediately upon joining the queue.
  */
 async function startLocalMedia() {
     try {
@@ -73,7 +74,7 @@ function createPeerConnection(isInitiator) {
         if (remoteVideo.srcObject !== event.streams[0]) {
             remoteVideo.srcObject = event.streams[0];
             remoteVideo.play();
-            // ⭐️ CHANGE 1: Update status message text
+            // ⭐️ FEATURE: Updated status message text
             statusMessage.textContent = "Connected! Your Live Stream is Active."; 
             
             // Secondary Accent Color: Green for positive status
@@ -177,7 +178,7 @@ function clearConnectionState() {
 
 /**
  * Handles the "Hang Up" action (manual button click).
- * NOTE: This function is now only used to return to the full lobby if no user data exists.
+ * NOTE: This function is only used internally if user data is missing.
  */
 function handleHangUp(isAutomatic = false) {
     if (partnerId) {
@@ -249,8 +250,6 @@ socket.on('match-found', async (data) => {
     statusMessage.textContent = `Match found! Setting up video...`;
     remoteInfo.textContent = `${partnerUsername} (${partnerCountry})`;
     
-    // ⭐️ CHANGE 2: Removed redundant startLocalMedia() call here
-    
     // Determine who creates the initial offer (smaller socket ID initiates)
     const isInitiator = socket.id < partnerId;
     createPeerConnection(isInitiator);
@@ -260,7 +259,7 @@ socket.on('match-found', async (data) => {
 socket.on('signal', async (data) => {
     // If we receive a signal before the connection is fully initialized, initialize it as the answerer.
     if (!peerConnection && data.type === 'sdp-offer') {
-        // ⭐️ CHANGE 2: Kept startLocalMedia() here for the answerer 
+        // Start local media here for the answerer if it hasn't started yet
         await startLocalMedia(); 
         createPeerConnection(false); // False because the person who sent the signal is the initiator
     }
@@ -273,4 +272,30 @@ socket.on('signal', async (data) => {
             statusMessage.textContent = "Secure connection established, waiting for video...";
         } else if (data.type === 'ice-candidate') {
             if (data.payload) {
-                await peerConnection.addIceCandidate(new RTCIce
+                await peerConnection.addIceCandidate(new RTCIceCandidate(data.payload));
+            }
+        }
+    } catch (error) {
+        console.error("Error processing signal:", data.type, error);
+    }
+});
+
+// 3. Waiting in Queue Event
+socket.on('waiting-in-queue', () => {
+    waitingMessage.classList.remove('hidden');
+    statusMessage.textContent = "Searching for a partner... Worldwide priority first!";
+});
+
+// 4. Partner Dropped Event (Crucial Logic from server.js)
+socket.on('partner-dropped', () => {
+    console.log("SERVER ALERT: Partner disconnected unexpectedly. Starting auto-requeue.");
+    
+    // Clear the current connection state
+    clearConnectionState();
+    
+    // Auto-requeue immediately
+    requeueForMatch();
+});
+
+
+// --- UI Event Hand
