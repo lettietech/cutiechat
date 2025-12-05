@@ -73,7 +73,9 @@ function createPeerConnection(isInitiator) {
         if (remoteVideo.srcObject !== event.streams[0]) {
             remoteVideo.srcObject = event.streams[0];
             remoteVideo.play();
-            statusMessage.textContent = "Connected! Enjoy your chat.";
+            // ⭐️ CHANGE 1: Update status message text
+            statusMessage.textContent = "Connected! Your Live Stream is Active."; 
+            
             // Secondary Accent Color: Green for positive status
             statusMessage.classList.remove('text-blue-600'); 
             statusMessage.classList.add('text-green-600'); 
@@ -175,6 +177,7 @@ function clearConnectionState() {
 
 /**
  * Handles the "Hang Up" action (manual button click).
+ * NOTE: This function is now only used to return to the full lobby if no user data exists.
  */
 function handleHangUp(isAutomatic = false) {
     if (partnerId) {
@@ -246,8 +249,7 @@ socket.on('match-found', async (data) => {
     statusMessage.textContent = `Match found! Setting up video...`;
     remoteInfo.textContent = `${partnerUsername} (${partnerCountry})`;
     
-    // Start local media (camera/mic) and set up the connection
-    await startLocalMedia();
+    // ⭐️ CHANGE 2: Removed redundant startLocalMedia() call here
     
     // Determine who creates the initial offer (smaller socket ID initiates)
     const isInitiator = socket.id < partnerId;
@@ -258,7 +260,8 @@ socket.on('match-found', async (data) => {
 socket.on('signal', async (data) => {
     // If we receive a signal before the connection is fully initialized, initialize it as the answerer.
     if (!peerConnection && data.type === 'sdp-offer') {
-        await startLocalMedia();
+        // ⭐️ CHANGE 2: Kept startLocalMedia() here for the answerer 
+        await startLocalMedia(); 
         createPeerConnection(false); // False because the person who sent the signal is the initiator
     }
 
@@ -270,57 +273,4 @@ socket.on('signal', async (data) => {
             statusMessage.textContent = "Secure connection established, waiting for video...";
         } else if (data.type === 'ice-candidate') {
             if (data.payload) {
-                await peerConnection.addIceCandidate(new RTCIceCandidate(data.payload));
-            }
-        }
-    } catch (error) {
-        console.error("Error processing signal:", data.type, error);
-    }
-});
-
-// 3. Waiting in Queue Event
-socket.on('waiting-in-queue', () => {
-    waitingMessage.classList.remove('hidden');
-    statusMessage.textContent = "Searching for a partner... Worldwide priority first!";
-});
-
-// 4. Partner Dropped Event (Crucial Logic from server.js)
-socket.on('partner-dropped', () => {
-    console.log("SERVER ALERT: Partner disconnected unexpectedly. Starting auto-requeue.");
-    
-    // Clear the current connection state
-    clearConnectionState();
-    
-    // Auto-requeue immediately
-    requeueForMatch();
-});
-
-
-// --- UI Event Handlers ---
-
-// 1. Handle Sign-up and Match Request
-signupForm.addEventListener('submit', (event) => {
-    event.preventDefault();
-    
-    // Get user input from the form
-    localUserData.username = document.getElementById('username').value.trim();
-    localUserData.country = document.getElementById('country').value;
-
-    if (localUserData.username && localUserData.country) {
-        // Hide the form and show the waiting status
-        lobbyView.classList.add('hidden');
-        waitingMessage.classList.remove('hidden');
-
-        // Send user data to the server for matchmaking
-        socket.emit('start-matching', localUserData);
-
-    } else {
-        alert("Please enter your Name and select your Country to start.");
-    }
-});
-
-// 2. Handle Manual Hang Up Button
-hangupButton.addEventListener('click', () => {
-    // Use the function that clears state and signals the server
-    handleHangUp(false);
-});
+                await peerConnection.addIceCandidate(new RTCIce
