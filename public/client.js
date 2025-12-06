@@ -80,8 +80,8 @@ function createPeerConnection(isInitiator) {
             // Secondary Accent Color: Green for positive status
             statusMessage.classList.remove('text-blue-600'); 
             statusMessage.classList.add('text-green-600'); 
-            remoteVideoContainer.classList.remove('border-gray-300');
-            remoteVideoContainer.classList.add('border-green-500');
+            
+            // *** GREEN BORDER CODE REMOVED HERE ***
         }
     };
 
@@ -170,9 +170,7 @@ function clearConnectionState() {
     remoteInfo.textContent = '';
     partnerId = null;
     
-    // Reset remote video border back to gray
-    remoteVideoContainer.classList.remove('border-green-500');
-    remoteVideoContainer.classList.add('border-gray-300');
+    // *** GREEN BORDER RESET CODE REMOVED HERE ***
 }
 
 
