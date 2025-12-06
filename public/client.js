@@ -298,4 +298,47 @@ socket.on('partner-dropped', () => {
 });
 
 
-// --- UI Event Hand
+// --- UI Event Handlers ---
+
+// 1. Handle Sign-up and Match Request
+signupForm.addEventListener('submit', async (event) => {
+    // 🛑 CRITICAL FIX: PREVENT DEFAULT FORM SUBMISSION/RELOAD 🛑
+    event.preventDefault(); 
+    console.log("Form submit intercepted. Starting video and matchmaking...");
+    
+    // Get user input from the form
+    localUserData.username = document.getElementById('username').value.trim();
+    localUserData.country = document.getElementById('country').value;
+
+    if (localUserData.username && localUserData.country) {
+        
+        // ⭐️ FEATURE: Start local media (show video) immediately upon joining the queue
+        await startLocalMedia();
+        
+        // Hide the form and show the waiting status
+        lobbyView.classList.add('hidden');
+        waitingMessage.classList.remove('hidden');
+
+        // Send user data to the server for matchmaking
+        socket.emit('start-matching', localUserData);
+
+    } else {
+        alert("Please enter your Name and select your Country to start.");
+    }
+});
+
+// 2. Handle Manual Hang Up Button
+hangupButton.addEventListener('click', () => {
+    // ⭐️ FEATURE: Implement auto-requeue logic for manual hang-up
+    
+    // 1. Tell the server we are hanging up (so the partner is notified)
+    if (partnerId) {
+        socket.emit('user-hangup', { partnerId: partnerId });
+    }
+    
+    // 2. Clear connection state (stops video feeds, etc.)
+    clearConnectionState(); 
+    
+    // 3. Immediately requeue the user (using existing name/country)
+    requeueForMatch();
+});
