@@ -74,7 +74,7 @@ function createPeerConnection(isInitiator) {
         if (remoteVideo.srcObject !== event.streams[0]) {
             remoteVideo.srcObject = event.streams[0];
             remoteVideo.play();
-            // ⭐️ FEATURE: Updated status message text
+            // ⭐️ FIX 2: This is the final success message, displayed when the video stream starts.
             statusMessage.textContent = "Connected! Your Live Stream is Active."; 
             
             // Secondary Accent Color: Green for positive status
@@ -255,19 +255,22 @@ socket.on('match-found', async (data) => {
 
 // 2. Signaling Data Event (WebRTC negotiation)
 socket.on('signal', async (data) => {
-    // If we receive a signal before the connection is fully initialized, initialize it as the answerer.
-    if (!peerConnection && data.type === 'sdp-offer') {
-        // Start local media here for the answerer if it hasn't started yet
-        await startLocalMedia(); 
-        createPeerConnection(false); // False because the person who sent the signal is the initiator
+    // CRITICAL FIX 1: Ensure peerConnection exists before processing signals.
+    if (!peerConnection) {
+        console.warn("Received signal before peer connection was initialized. Skipping.");
+        return; 
     }
 
     try {
         if (data.type === 'sdp-offer') {
+            await peerConnection.setRemoteDescription(new RTCSessionDescription(data.payload));
             await createAnswer(data.payload);
+
         } else if (data.type === 'sdp-answer') {
             await peerConnection.setRemoteDescription(new RTCSessionDescription(data.payload));
-            statusMessage.textContent = "Secure connection established, waiting for video...";
+            // ⭐️ FIX 2: Updated message to reflect the security step is done, stream transfer begins.
+            statusMessage.textContent = "Secure connection established. Initiating video stream..."; 
+            
         } else if (data.type === 'ice-candidate') {
             if (data.payload) {
                 await peerConnection.addIceCandidate(new RTCIceCandidate(data.payload));
