@@ -34,21 +34,40 @@ const iceServers = {
 
 /**
  * Gets the user's local media stream (camera and microphone).
- * ⭐️ FEATURE: Used to start local video immediately upon joining the queue.
  */
 async function startLocalMedia() {
     try {
         if (!localStream) {
             // Request both video and audio access from the browser
             localStream = await navigator.mediaDevices.getUserMedia({ video: true, audio: true });
-            localVideo.srcObject = localStream;
-            localVideo.play();
         }
-        localInfo.textContent = `${localUserData.username} (${localUserData.country})`;
-
+        return true; // Return success
     } catch (error) {
         console.error("Error accessing media devices: ", error);
         statusMessage.textContent = "Error: Could not access camera/microphone. Please check permissions.";
+        return false; // Return failure
+    }
+}
+
+/**
+ * Displays the local video stream. Called immediately upon joining the queue.
+ * ⭐️ FIX 1: Ensures user sees themselves while waiting.
+ */
+function startLocalMediaView() {
+    if (localStream) {
+        localVideo.srcObject = localStream;
+        localVideo.play();
+        localInfo.textContent = `${localUserData.username} (${localUserData.country})`;
+
+        // Show the video view container while hiding the lobby/signup form
+        lobbyView.classList.add('hidden');
+        videoChatView.classList.remove('hidden'); // Show the video container
+        waitingMessage.classList.remove('hidden'); // Ensure waiting message is also visible
+        
+        // Hide the remote video section initially while waiting
+        remoteVideoContainer.style.visibility = 'hidden';
+        remoteVideoContainer.style.opacity = '0';
+        remoteInfo.textContent = 'Awaiting partner...';
     }
 }
 
@@ -74,14 +93,16 @@ function createPeerConnection(isInitiator) {
         if (remoteVideo.srcObject !== event.streams[0]) {
             remoteVideo.srcObject = event.streams[0];
             remoteVideo.play();
-            // ⭐️ FIX 2: This is the final success message, displayed when the video stream starts.
+            
+            // Show the remote video container now that the stream is active
+            remoteVideoContainer.style.visibility = 'visible';
+            remoteVideoContainer.style.opacity = '1';
+
             statusMessage.textContent = "Connected! Your Live Stream is Active."; 
             
             // Secondary Accent Color: Green for positive status
             statusMessage.classList.remove('text-blue-600'); 
             statusMessage.classList.add('text-green-600'); 
-            
-            // *** GREEN BORDER CODE REMOVED HERE ***
         }
     };
 
@@ -142,9 +163,12 @@ async function createOffer() {
  */
 async function createAnswer(offer) {
     try {
+        // Must set remote description before creating an answer
         await peerConnection.setRemoteDescription(new RTCSessionDescription(offer));
+        
         const answer = await peerConnection.createAnswer();
         await peerConnection.setLocalDescription(answer);
+        
         socket.emit('signal', {
             target: partnerId,
             type: 'sdp-answer',
@@ -170,13 +194,14 @@ function clearConnectionState() {
     remoteInfo.textContent = '';
     partnerId = null;
     
-    // *** GREEN BORDER RESET CODE REMOVED HERE ***
+    // Re-hide the remote video container
+    remoteVideoContainer.style.visibility = 'hidden';
+    remoteVideoContainer.style.opacity = '0';
 }
 
 
 /**
  * Handles the "Hang Up" action (manual button click).
- * NOTE: This function is only used internally if user data is missing.
  */
 function handleHangUp(isAutomatic = false) {
     if (partnerId) {
@@ -212,10 +237,8 @@ function handleHangUp(isAutomatic = false) {
  * Auto-Requeue logic (key functional requirement).
  */
 function requeueForMatch() {
-    // Hide video view, ensure waiting message is visible
-    videoChatView.classList.add('hidden');
-    lobbyView.classList.add('hidden');
-    waitingMessage.classList.remove('hidden');
+    // Show local video view, ensure waiting message is visible
+    startLocalMediaView(); // Re-show local video immediately
     
     // Update status message
     statusMessage.textContent = "Partner dropped. Automatically searching for a new International match...";
@@ -243,8 +266,8 @@ socket.on('match-found', async (data) => {
     
     // Update UI
     waitingMessage.classList.add('hidden');
-    lobbyView.classList.add('hidden');
-    videoChatView.classList.remove('hidden');
+    // NOTE: lobbyView is already hidden and videoChatView is already shown by startLocalMediaView()
+    
     statusMessage.textContent = `Match found! Setting up video...`;
     remoteInfo.textContent = `${partnerUsername} (${partnerCountry})`;
     
@@ -255,20 +278,24 @@ socket.on('match-found', async (data) => {
 
 // 2. Signaling Data Event (WebRTC negotiation)
 socket.on('signal', async (data) => {
-    // CRITICAL FIX 1: Ensure peerConnection exists before processing signals.
+    // CRITICAL FIX 2: If peerConnection doesn't exist yet (i.e., we are the answerer), create it now.
+    if (!peerConnection && data.type === 'sdp-offer') {
+        // We must have already started local media to be able to answer
+        createPeerConnection(false); 
+    }
+    
+    // Check again after potential creation. If it still doesn't exist, something is wrong.
     if (!peerConnection) {
         console.warn("Received signal before peer connection was initialized. Skipping.");
-        return; 
+        return;
     }
 
     try {
         if (data.type === 'sdp-offer') {
-            await peerConnection.setRemoteDescription(new RTCSessionDescription(data.payload));
             await createAnswer(data.payload);
 
         } else if (data.type === 'sdp-answer') {
             await peerConnection.setRemoteDescription(new RTCSessionDescription(data.payload));
-            // ⭐️ FIX 2: Updated message to reflect the security step is done, stream transfer begins.
             statusMessage.textContent = "Secure connection established. Initiating video stream..."; 
             
         } else if (data.type === 'ice-candidate') {
@@ -303,7 +330,6 @@ socket.on('partner-dropped', () => {
 
 // 1. Handle Sign-up and Match Request
 signupForm.addEventListener('submit', async (event) => {
-    // 🛑 CRITICAL FIX: PREVENT DEFAULT FORM SUBMISSION/RELOAD 🛑
     event.preventDefault(); 
     console.log("Form submit intercepted. Starting video and matchmaking...");
     
@@ -313,15 +339,15 @@ signupForm.addEventListener('submit', async (event) => {
 
     if (localUserData.username && localUserData.country) {
         
-        // ⭐️ FEATURE: Start local media (show video) immediately upon joining the queue
-        await startLocalMedia();
+        // ⭐️ FIX 1: Start local media first and ensure it was successful
+        const mediaStarted = await startLocalMedia();
         
-        // Hide the form and show the waiting status
-        lobbyView.classList.add('hidden');
-        waitingMessage.classList.remove('hidden');
-
-        // Send user data to the server for matchmaking
-        socket.emit('start-matching', localUserData);
+        if (mediaStarted) {
+            startLocalMediaView(); // Show local video immediately
+            
+            // Send user data to the server for matchmaking
+            socket.emit('start-matching', localUserData);
+        }
 
     } else {
         alert("Please enter your Name and select your Country to start.");
